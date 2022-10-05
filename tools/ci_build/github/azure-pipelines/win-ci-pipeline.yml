@@ -114,6 +114,7 @@ stages:
         job_name_suffix: training_x64_debug
         RunOnnxRuntimeTests: ${{ parameters.RunOnnxRuntimeTests }}
         RunStaticCodeAnalysis: false
+        submodules: true
 
 - stage: training_x64_release
   dependsOn: []
@@ -128,8 +129,8 @@ stages:
         isX86: false
         job_name_suffix: training_x64_release
         RunOnnxRuntimeTests: ${{ parameters.RunOnnxRuntimeTests }}
-        # Liqun is fixing them
         RunStaticCodeAnalysis: true
+        submodules: true
 
 - stage: training_on_device_x64_release
   dependsOn: []
@@ -146,3 +147,5 @@ stages:
         RunOnnxRuntimeTests: ${{ parameters.RunOnnxRuntimeTests }}
         RunStaticCodeAnalysis: true
         EnablePython: false
+        submodules: true
+

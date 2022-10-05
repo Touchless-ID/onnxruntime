@@ -8,13 +8,26 @@ set(FP16_BUILD_BENCHMARKS OFF CACHE INTERNAL "")
 set(CLOG_SOURCE_DIR "${PYTORCH_CPUINFO_DIR}/deps/clog")
 set(CPUINFO_SOURCE_DIR ${PYTORCH_CPUINFO_DIR})
 
-if(onnxruntime_BUILD_WEBASSEMBLY)
-  execute_process(COMMAND git apply --ignore-space-change --ignore-whitespace ${PROJECT_SOURCE_DIR}/patches/xnnpack/AddEmscriptenSupport.patch WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/${XNNPACK_DIR})
-endif()
+#TODO check the versions
+FetchContent_Declare(
+fp16
+URL https://github.com/Maratyszcza/FP16/archive/0a92994d729ff76a58f692d3028ca1b64b145d91.zip
+)
+FetchContent_MakeAvailable(fp16)
+FetchContent_Declare(
+pthreadpool
+URL https://github.com/Maratyszcza/pthreadpool/archive/1787867f6183f056420e532eec640cba25efafea.zip
+)
+FetchContent_MakeAvailable(pthreadpool)
+FetchContent_Declare(
+googlexnnpack
+URL https://github.com/google/XNNPACK/archive/003c580e696a774afdc984996ee909b7c8d8128c.zip
+PATCH_COMMAND ${Patch_EXECUTABLE} --binary --ignore-whitespace -p1 < ${PROJECT_SOURCE_DIR}/patches/xnnpack/AddEmscriptenSupport.patch
+)
 
-add_subdirectory(external/FP16)
-add_subdirectory(external/pthreadpool)
-add_subdirectory(external/XNNPACK)
+FetchContent_MakeAvailable(googlexnnpack)
+set(XNNPACK_DIR ${googlexnnpack_SOURCE_DIR})
+
 
 set_target_properties(fp16 PROPERTIES FOLDER "External/Xnnpack")
 set_target_properties(pthreadpool PROPERTIES FOLDER "External/Xnnpack")

@@ -11,6 +11,9 @@ cmake_policy(SET CMP0091 NEW)
 if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.20")
   cmake_policy(SET CMP0117 NEW)
 endif()
+if (${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.24")
+  cmake_policy(SET CMP0135 NEW)
+endif()
 # Don't let cmake set a default value for CMAKE_CUDA_ARCHITECTURES
 cmake_policy(SET CMP0104 OLD)
 
@@ -223,6 +226,10 @@ endif()
 
 # Single output director for all binaries
 set(RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin CACHE PATH "Single output directory for all binaries.")
+
+
+include(FetchContent)
+
 
 function(set_msvc_c_cpp_compiler_warning_level warning_level)
   if (NOT "${warning_level}" MATCHES "^[0-4]$")
@@ -720,8 +727,6 @@ if (onnxruntime_BUILD_UNIT_TESTS)
   if (TARGET GTest::gtest)
     message("Use gtest from preinstalled system lib")
   else()
-    message("Use gtest from submodule")
-
     # WebAssembly threading support in Node.js is still an experimental feature and
     # not working properly with googletest suite.
     if (onnxruntime_BUILD_WEBASSEMBLY)
@@ -729,9 +734,13 @@ if (onnxruntime_BUILD_UNIT_TESTS)
     endif()
 
     # gtest and gmock
-    set_msvc_c_cpp_compiler_warning_level(4)
-    add_subdirectory(${PROJECT_SOURCE_DIR}/external/googletest EXCLUDE_FROM_ALL)
-    set_msvc_c_cpp_compiler_warning_level(3)
+
+    FetchContent_Declare(
+      googletest
+      URL https://github.com/google/googletest/archive/refs/tags/release-1.12.1.zip      
+    )
+    FetchContent_MakeAvailable(googletest)
+    
     set_target_properties(gmock PROPERTIES FOLDER "External/GTest")
     if (NOT MSVC)
       # disable treating all warnings as errors for gmock
@@ -766,6 +775,7 @@ if (onnxruntime_BUILD_SHARED_LIB OR onnxruntime_ENABLE_PYTHON)
 endif()
 
 #target begins from here
+# External dependencies
 
 if (onnxruntime_BUILD_BENCHMARKS)
   if (onnxruntime_PREFER_SYSTEM_LIB)
@@ -774,12 +784,17 @@ if (onnxruntime_BUILD_BENCHMARKS)
   if (TARGET benchmark::benchmark)
     message("Use benchmark from preinstalled system lib")
   else()
-    message("Use benchmark from submodule")
     # We will not need to test benchmark lib itself.
     set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "Disable benchmark testing as we don't need it.")
     # We will not need to install benchmark since we link it statically.
     set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "Disable benchmark install to avoid overwriting vendor install.")
-    add_subdirectory(${PROJECT_SOURCE_DIR}/external/googlebenchmark EXCLUDE_FROM_ALL)
+   
+      FetchContent_Declare(
+        google_benchmark
+        URL https://github.com/google/benchmark/archive/refs/tags/v1.7.0.zip
+      )
+      FetchContent_MakeAvailable(google_benchmark)
+   
     #add_library(benchmark::benchmark ALIAS benchmark)
   endif()
 endif()
@@ -790,12 +805,15 @@ if (NOT WIN32)
   endif()
   if (TARGET nsync_cpp)  # linking error with nsync_FOUND (why?)
     message("Use nsync from preinstalled system lib")
-  else()
-    message("Use nsync from submodule")
-    add_subdirectory(${PROJECT_SOURCE_DIR}/external/nsync EXCLUDE_FROM_ALL)
+  else()            
+      FetchContent_Declare(
+        google_nsync
+        URL https://github.com/google/nsync/archive/refs/tags/1.25.0.zip        
+      )
+      FetchContent_MakeAvailable(google_nsync)
+	  set(nsync_SOURCE_DIR ${google_nsync_SOURCE_DIR})   
   endif()
 endif()
-# External dependencies
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/external)
 
 #protobuf begin
@@ -823,7 +841,6 @@ if (Protobuf_FOUND)
     set(PROTOBUF_LIB protobuf::libprotobuf-lite)
   endif()
 else()
-  message("Use protobuf from submodule")
   # use protobuf as a submodule
   if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(protobuf_BUILD_PROTOC_BINARIES OFF CACHE BOOL "Build protobuf tests" FORCE)
@@ -832,13 +849,25 @@ else()
   if (onnxruntime_DISABLE_RTTI)
     set(protobuf_DISABLE_RTTI ON CACHE BOOL "Remove runtime type information in the binaries" FORCE)
   endif()
-  add_subdirectory(${PROJECT_SOURCE_DIR}/external/protobuf/cmake EXCLUDE_FROM_ALL)
-
+ 
+    FetchContent_Declare(
+      protobuf
+      URL https://github.com/protocolbuffers/protobuf/archive/refs/tags/v3.18.3.zip      
+      SOURCE_SUBDIR  cmake
+    )
+    FetchContent_MakeAvailable(protobuf)
+ 
   if (TARGET libprotoc)
-    set_target_properties(libprotoc PROPERTIES FOLDER "External/Protobuf")
-    add_executable(protobuf::protoc ALIAS protoc)
+    set_target_properties(libprotoc PROPERTIES FOLDER "External/Protobuf")    
+    if (NOT MSVC)
+      target_compile_options(libprotoc PRIVATE "-w")
+    endif()
   endif()
   if (TARGET protoc)
+    add_executable(protobuf::protoc ALIAS protoc)
+    if (NOT MSVC)
+      target_compile_options(protoc PRIVATE "-w")
+    endif()
     set_target_properties(protoc PROPERTIES FOLDER "External/Protobuf")
     get_target_property(PROTOC_OSX_ARCH protoc OSX_ARCHITECTURES)
     if (PROTOC_OSX_ARCH)
@@ -856,6 +885,12 @@ else()
     set(PROTOBUF_LIB libprotobuf)
   else()
     set(PROTOBUF_LIB libprotobuf-lite)
+  endif()
+  if (TARGET libprotobuf AND NOT MSVC)
+    target_compile_options(libprotobuf PRIVATE "-w")
+  endif()
+  if (TARGET libprotobuf-lite AND NOT MSVC)
+    target_compile_options(libprotobuf-lite PRIVATE "-w")
   endif()
 endif()
 
@@ -899,13 +934,14 @@ if (date_FOUND)
   message("Use date from preinstalled system lib")
   add_library(date_interface ALIAS date::date)
 else()
-  message("Use date from submodule")
-  add_subdirectory(external/date EXCLUDE_FROM_ALL)
+ 
+    FetchContent_Declare(
+		  date
+		  URL https://github.com/HowardHinnant/date/archive/refs/tags/v2.4.1.zip		  
+		)
+		FetchContent_MakeAvailable(date)
+ 
 endif()
-
-set(SAFEINT_INCLUDE_DIR ${REPO_ROOT}/cmake/external/SafeInt)
-add_library(safeint_interface INTERFACE)
-target_include_directories(safeint_interface INTERFACE ${SAFEINT_INCLUDE_DIR})
 
 if (onnxruntime_PREFER_SYSTEM_LIB)
   find_package(boost_mp11)
@@ -916,9 +952,12 @@ if (onnxruntime_PREFER_SYSTEM_LIB)
 endif()
 if (TARGET Boost::mp11)
   message("Use mp11 from preinstalled system lib")
-else()
-  message("Use mp11 from submodule")
-  add_subdirectory(external/mp11 EXCLUDE_FROM_ALL)
+else()    
+    FetchContent_Declare(
+      mp11
+      URL https://github.com/boostorg/mp11/archive/refs/tags/boost-1.79.0.zip      
+    )
+    FetchContent_MakeAvailable(mp11)  
 endif()
 
 if (onnxruntime_PREFER_SYSTEM_LIB)
@@ -927,11 +966,19 @@ endif()
 if (nlohmann_json_FOUND)
   message("Use json from preinstalled system lib")
 else()
-  message("Use json from submodule")
   set(JSON_BuildTests OFF CACHE INTERNAL "")
   set(JSON_Install OFF CACHE INTERNAL "")
-  add_subdirectory(external/json EXCLUDE_FROM_ALL)
+  set(JSON_BuildTests OFF CACHE INTERNAL "")
+  set(JSON_Install OFF CACHE INTERNAL "")
+  
+    FetchContent_Declare(
+      json
+      URL https://github.com/nlohmann/json/archive/refs/tags/v3.10.5.zip      
+    )
+    FetchContent_MakeAvailable(json)
+  
 endif()
+
 
 if (onnxruntime_PREFER_SYSTEM_LIB)
   find_package(re2)
@@ -939,9 +986,13 @@ endif()
 if (re2_FOUND)
   message("Use re2 from preinstalled system lib")
 else()
-  message("Use re2 from submodule")
-  add_subdirectory(external/re2 EXCLUDE_FROM_ALL)
-  set_target_properties(re2 PROPERTIES FOLDER "External/re2")
+
+    FetchContent_Declare(
+      re2
+      URL https://github.com/google/re2/archive/refs/tags/2022-06-01.zip     
+    )
+    FetchContent_MakeAvailable(re2)
+  
   set(RE2_INCLUDE_DIR ${REPO_ROOT}/cmake/external/re2)
 endif()
 
@@ -1004,15 +1055,17 @@ if (CPUINFO_SUPPORTED)
   if (cpuinfo_FOUND)
     message("Use cpuinfo from preinstalled system lib")
   else()
-    message("Use cpuinfo from submodule")
     set(CPUINFO_BUILD_TOOLS OFF CACHE INTERNAL "")
     set(CPUINFO_BUILD_UNIT_TESTS OFF CACHE INTERNAL "")
     set(CPUINFO_BUILD_MOCK_TESTS OFF CACHE INTERNAL "")
     set(CPUINFO_BUILD_BENCHMARKS OFF CACHE INTERNAL "")
-    add_subdirectory(external/pytorch_cpuinfo EXCLUDE_FROM_ALL)
-    if (MSVC)
-      target_compile_options(cpuinfo PRIVATE "-D_CRT_SECURE_NO_WARNINGS")
-    endif()
+    
+        FetchContent_Declare(
+          pytorch_cpuinfo
+          URL https://github.com/pytorch/cpuinfo/archive/5916273f79a21551890fd3d56fc5375a78d1598d.zip
+        )
+        FetchContent_MakeAvailable(pytorch_cpuinfo)
+    
   endif()
 endif()
 
@@ -1032,11 +1085,20 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -DGSL_UNEN
 set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -DGSL_UNENFORCED_ON_CONTRACT_VIOLATION")
 
 include(eigen)
+include(wil.cmake)    
+FetchContent_Declare(
+    safeint
+    URL https://github.com/dcleblanc/SafeInt/archive/ff15c6ada150a5018c5ef2172401cb4529eac9c0.zip      
+)
+FetchContent_MakeAvailable(safeint)
+add_library(safeint_interface INTERFACE)
+target_include_directories(safeint_interface INTERFACE ${safeint_SOURCE_DIR})
+# External dependencies end.
 
 #onnxruntime_EXTERNAL_LIBRARIES could contain onnx, onnx_proto,libprotobuf, cuda/cudnn,
 # dnnl/mklml, onnxruntime_codegen_tvm, tvm and pthread
 # pthread is always at the last
-set(onnxruntime_EXTERNAL_LIBRARIES onnx onnx_proto ${PROTOBUF_LIB} re2::re2)
+set(onnxruntime_EXTERNAL_LIBRARIES nlohmann_json::nlohmann_json onnx onnx_proto ${PROTOBUF_LIB} re2::re2 Boost::mp11 safeint_interface)
 
 if(NOT onnxruntime_DISABLE_ABSEIL)
   set(ABSEIL_LIBS absl::inlined_vector absl::flat_hash_set
@@ -1315,7 +1377,7 @@ function(onnxruntime_set_compile_flags target_name)
       endif()
 
       target_compile_definitions(${target_name} PUBLIC -DNSYNC_ATOMIC_CPP11)
-      target_include_directories(${target_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/external/nsync/public")
+      target_include_directories(${target_name} PRIVATE "${nsync_SOURCE_DIR}/public")
     endif()
     foreach(ORT_FLAG ${ORT_PROVIDER_FLAGS})
       target_compile_definitions(${target_name} PRIVATE ${ORT_FLAG})
@@ -1410,8 +1472,10 @@ endfunction()
 
 function(onnxruntime_add_include_to_target dst_target)
     foreach(src_target ${ARGN})
+	  if(TARGET ${src_target})
         target_include_directories(${dst_target} PRIVATE $<TARGET_PROPERTY:${src_target},INTERFACE_INCLUDE_DIRECTORIES>)
         target_compile_definitions(${dst_target} PRIVATE $<TARGET_PROPERTY:${src_target},INTERFACE_COMPILE_DEFINITIONS>)
+	  endif()
     endforeach()
 endfunction()
 
@@ -1578,7 +1642,11 @@ else()
 endif()
 
 if (NOT onnxruntime_MINIMAL_BUILD)
-  add_subdirectory(external/onnx EXCLUDE_FROM_ALL)
+    FetchContent_Declare(
+      onnx
+      URL https://github.com/onnx/onnx/archive/5a5f8a5935762397aa68429b5493084ff970f774.zip      
+    )
+    FetchContent_MakeAvailable(onnx) 
 else()
   include(onnx_minimal)
 endif()
@@ -1610,7 +1678,6 @@ if (Flatbuffers_FOUND)
   message("Use flatbuffers from preinstalled system lib")
   add_library(flatbuffers ALIAS flatbuffers::flatbuffers)
 else()
-  message("Use flatbuffers from submodule")
   # We do not need to build flatc for iOS or Android Cross Compile
   if (CMAKE_SYSTEM_NAME STREQUAL "iOS" OR CMAKE_SYSTEM_NAME STREQUAL "Android" OR onnxruntime_BUILD_WEBASSEMBLY)
     set(FLATBUFFERS_BUILD_FLATC OFF CACHE BOOL "FLATBUFFERS_BUILD_FLATC" FORCE)
@@ -1619,10 +1686,15 @@ else()
   set(FLATBUFFERS_INSTALL OFF CACHE BOOL "FLATBUFFERS_INSTALL" FORCE)
   set(FLATBUFFERS_BUILD_FLATHASH OFF CACHE BOOL "FLATBUFFERS_BUILD_FLATHASH" FORCE)
   set(FLATBUFFERS_BUILD_FLATLIB ON CACHE BOOL "FLATBUFFERS_BUILD_FLATLIB" FORCE)
-  set_msvc_c_cpp_compiler_warning_level(4)
-  add_subdirectory(external/flatbuffers EXCLUDE_FROM_ALL)
+  set_msvc_c_cpp_compiler_warning_level(4)  
+    FetchContent_Declare(
+      flatbuffers
+      URL https://github.com/google/flatbuffers/archive/refs/tags/v1.12.0.zip      
+    )
+    FetchContent_MakeAvailable(flatbuffers)  
   set_msvc_c_cpp_compiler_warning_level(3)
 endif()
+
 list(APPEND onnxruntime_EXTERNAL_DEPENDENCIES flatbuffers)
 list(APPEND onnxruntime_EXTERNAL_LIBRARIES flatbuffers)
 
@@ -2102,8 +2174,6 @@ if (WIN32 AND NOT GDK_PLATFORM)
     add_link_options("/NODEFAULTLIB:onecore.lib")
   endif()
 endif()
-
-include(wil.cmake)
 
 if (onnxruntime_USE_WINML)
   # WINML uses and depends on the shared lib.  Note:  You can build WINML without DML and you will get a

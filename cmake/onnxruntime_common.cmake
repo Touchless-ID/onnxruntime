@@ -131,11 +131,7 @@ target_include_directories(onnxruntime_common
     PUBLIC
         ${OPTIONAL_LITE_INCLUDE_DIR})
 
-target_link_libraries(onnxruntime_common safeint_interface Boost::mp11)
-
-if(NOT WIN32)
-  target_include_directories(onnxruntime_common PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/nsync/public")
-endif()
+target_include_directories(onnxruntime_common PUBLIC safeint_interface)
 
 add_dependencies(onnxruntime_common ${onnxruntime_EXTERNAL_DEPENDENCIES})
 
@@ -227,9 +223,8 @@ if (ARM64 OR ARM OR X86 OR X64 OR X86_64)
     # Link cpuinfo if supported
     # Using it mainly in ARM with Android.
     # Its functionality in detecting x86 cpu features are lacking, so is support for Windows.
-
     if (CPUINFO_SUPPORTED)
-      target_link_libraries(onnxruntime_common cpuinfo)
+      onnxruntime_add_include_to_target(onnxruntime_common cpuinfo)
       list(APPEND onnxruntime_EXTERNAL_LIBRARIES cpuinfo clog)
     endif()
   endif()

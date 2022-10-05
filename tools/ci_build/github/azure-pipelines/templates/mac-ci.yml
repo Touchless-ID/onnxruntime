@@ -33,13 +33,15 @@ jobs:
       inputs:
         versionSpec: '16.x'
     - script: |
-        set -e
-        pushd .
-        cd $(Build.SourcesDirectory)/cmake/external/protobuf
+        set -e -x
+        curl -o protobuf-src.tar.gz -L https://github.com/protocolbuffers/protobuf/releases/download/v3.18.1/protobuf-all-3.18.1.tar.gz
+        mkdir b
+        cd b
+        tar --strip=1 -zxvf ../protobuf-src.tar.gz        
         cmake ./cmake -DCMAKE_INSTALL_PREFIX=$(Build.BinariesDirectory)/protobuf -DCMAKE_POSITION_INDEPENDENT_CODE=ON -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_BUILD_TYPE=Relwithdebinfo
         make -j $(getconf _NPROCESSORS_ONLN)
         make install
-        popd
+        cd ..
         export PATH=$(Build.BinariesDirectory)/protobuf/bin:$PATH
         export ONNX_ML=1
         export CMAKE_ARGS="-DONNX_GEN_PB_TYPE_STUBS=OFF -DONNX_WERROR=OFF"
