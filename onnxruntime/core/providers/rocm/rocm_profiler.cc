@@ -58,19 +58,22 @@ void RocmProfiler::EndProfiling(TimePoint start_time, Events& events)
   char buff[BSIZE];
 
   for (auto &item : d->rows_) {
-    std::initializer_list<std::pair<std::string, std::string>> args = {{"op_name", ""}};
-    addEventRecord(item, profiling_start, args, event_map);
+    std::unordered_map<std::string, std::string> args {
+      {"op_name", ""}
+    };
+    addEventRecord(item, profiling_start, std::move(args), event_map);
   }
 
   for (auto &item : d->mallocRows_) {
     snprintf(buff, BSIZE, "%p", item.ptr);
     const std::string arg_ptr{buff};
 
-    std::initializer_list<std::pair<std::string, std::string>> args = {{"op_name", ""},
-                                            {"ptr", arg_ptr},
-                                            {"size", std::to_string(item.size)}
-                                            };
-    addEventRecord(item, profiling_start, args, event_map);
+    std::unordered_map<std::string, std::string> args {
+      {"op_name", ""},
+      {"ptr", arg_ptr},
+      {"size", std::to_string(item.size)}
+    };
+    addEventRecord(item, profiling_start, std::move(args), event_map);
   }
 
   for (auto &item : d->copyRows_) {
@@ -81,14 +84,15 @@ void RocmProfiler::EndProfiling(TimePoint start_time, Events& events)
     snprintf(buff, BSIZE, "%p", item.dst);
     const std::string arg_dst{buff};
 
-    std::initializer_list<std::pair<std::string, std::string>> args = {{"op_name", ""},
-                                            {"stream", arg_stream},
-                                            {"src", arg_src},
-                                            {"dst", arg_dst},
-                                            {"size", std::to_string(item.size)},
-                                            {"kind", std::to_string(item.kind)},
-                                            };
-    addEventRecord(item, profiling_start, args, event_map);
+    std::unordered_map<std::string, std::string> args = {
+      {"op_name", ""},
+      {"stream", arg_stream},
+      {"src", arg_src},
+      {"dst", arg_dst},
+      {"size", std::to_string(item.size)},
+      {"kind", std::to_string(item.kind)},
+    };
+    addEventRecord(item, profiling_start, std::move(args), event_map);
     copyLaunches[item.id] = &item;
   }
 
@@ -103,17 +107,19 @@ void RocmProfiler::EndProfiling(TimePoint start_time, Events& events)
         snprintf(buff, BSIZE, " ");
     const std::string arg_kernel{buff};
 
-    std::initializer_list<std::pair<std::string, std::string>> args = {{"op_name", ""},
-                                            {"stream", arg_stream},
-                                            {"kernel", arg_kernel},
-                                            {"grid_x", std::to_string(item.gridX)},
-                                            {"grid_y", std::to_string(item.gridY)},
-                                            {"grid_z", std::to_string(item.gridZ)},
-                                            {"block_x", std::to_string(item.workgroupX)},
-                                            {"block_y", std::to_string(item.workgroupY)},
-                                            {"block_z", std::to_string(item.workgroupZ)},
-                                            };
-    addEventRecord(item, profiling_start, args, event_map);
+    std::unordered_map<std::string, std::string> args {
+      {"op_name", ""},
+      {"stream", arg_stream},
+      {"kernel", arg_kernel},
+      {"grid_x", std::to_string(item.gridX)},
+      {"grid_y", std::to_string(item.gridY)},
+      {"grid_z", std::to_string(item.gridZ)},
+      {"block_x", std::to_string(item.workgroupX)},
+      {"block_y", std::to_string(item.workgroupY)},
+      {"block_z", std::to_string(item.workgroupZ)},
+    };
+
+    addEventRecord(item, profiling_start, std::move(args), event_map);
     kernelLaunches[item.id] = &item;
   }
 
@@ -160,78 +166,81 @@ void RocmProfiler::EndProfiling(TimePoint start_time, Events& events)
         args["kind"] = std::to_string(item.kind);
       }
 
-      EventRecord event{
-          onnxruntime::profiling::KERNEL_EVENT,
-          static_cast<int>(record->device_id),
-          static_cast<int>(record->queue_id),
-          name,
-          static_cast<int64_t>((record->begin_ns - profiling_start) / 1000),
-          static_cast<int64_t>((record->end_ns - record->begin_ns) / 1000),
-          std::move(args)};
+      EventRecord event {
+        onnxruntime::profiling::KERNEL_EVENT,
+        static_cast<int>(record->device_id),
+        static_cast<int>(record->queue_id),
+        name,
+        static_cast<int64_t>((record->begin_ns - profiling_start) / 1000),
+        static_cast<int64_t>((record->end_ns - record->begin_ns) / 1000),
+        std::move(args)
+      };
 
-       // FIXME: deal with missing ext correlation
-       auto extId = d->externalCorrelations_[RoctracerLogger::CorrelationDomain::Default][record->correlation_id];
-       if (event_map.find(extId) == event_map.end()) {
-         event_map.insert({extId, {event}});
-       }
-       else {
-         event_map[extId].push_back(std::move(event));
-       }
-
-       roctracer_next_record(record, &record);
+      // FIXME: deal with missing ext correlation
+      auto extId = d->externalCorrelations_[RoctracerLogger::CorrelationDomain::Default][record->correlation_id];
+      event_map[extId].push_back(std::move(event));
+      roctracer_next_record(record, &record);
     }
   }
 
   // General
-  auto insert_iter = events.begin();
-  for (auto& map_iter : event_map) {
-    auto ts = static_cast<long long>(map_iter.first);
-    while (insert_iter != events.end() && insert_iter->ts < ts) {
-      insert_iter++;
+  auto existing_events = std::move(events);
+  events.clear();
+
+  auto insert_iter = existing_events.begin();
+  for (auto& [device_event_ts_u64, device_events] : event_map) {
+    auto device_event_ts = static_cast<long long>(device_event_ts_u64);
+    while (insert_iter != existing_events.end() && insert_iter->ts < device_event_ts) {
+      events.push_back(std::move(*insert_iter));
+      ++insert_iter;
     }
-    if (insert_iter != events.end() && insert_iter->ts == ts) {
-      for (auto& evt_iter : map_iter.second) {
-        evt_iter.args["op_name"] = insert_iter->args["op_name"];
+    if (insert_iter != existing_events.end() && insert_iter->ts == device_event_ts) {
+      for (auto& device_event : device_events) {
+        device_event.args["op_name"] = insert_iter->args["op_name"];
       }
-      insert_iter = events.insert(insert_iter+1, map_iter.second.begin(), map_iter.second.end());
-    } else {
-      insert_iter = events.insert(insert_iter, map_iter.second.begin(), map_iter.second.end());
     }
-    while (insert_iter != events.end() && insert_iter->cat == EventCategory::KERNEL_EVENT) {
-      insert_iter++;
+    events.insert(events.end(), device_events.begin(), device_events.end());
+    while (insert_iter != existing_events.end() && insert_iter->cat == EventCategory::KERNEL_EVENT) {
+      events.push_back(std::move(*insert_iter));
+      ++insert_iter;
     }
+  }
+
+  // insert any remaining events into the merged event list
+  while (insert_iter != existing_events.end()) {
+    events.push_back(std::move(*insert_iter));
   }
 }
 
 void RocmProfiler::Start(uint64_t id)
 {
-    d->pushCorrelationID(id, RoctracerLogger::CorrelationDomain::Default);
+  d->pushCorrelationID(id, RoctracerLogger::CorrelationDomain::Default);
 }
 
 void RocmProfiler::Stop(uint64_t)
 {
-    d->popCorrelationID(RoctracerLogger::CorrelationDomain::Default);
+  d->popCorrelationID(RoctracerLogger::CorrelationDomain::Default);
 }
 
 
-void RocmProfiler::addEventRecord(const roctracerRow &item, int64_t pstart, const std::initializer_list<std::pair<std::string, std::string>> &args, std::map<uint64_t, std::vector<EventRecord>> &event_map)
+void RocmProfiler::addEventRecord(const roctracerRow &item,
+                                  int64_t pstart,
+                                  std::unordered_map<std::string, std::string>&& event_args,
+                                  std::map<uint64_t, std::vector<EventRecord>>& event_map)
 {
-  EventRecord event{onnxruntime::profiling::API_EVENT,
-      static_cast<int>(item.pid),
-      static_cast<int>(item.tid),
-      std::string(roctracer_op_string(ACTIVITY_DOMAIN_HIP_API, item.cid, 0)),
-      static_cast<int64_t>((item.begin - pstart) / 1000),
-      static_cast<int64_t>((item.end - item.begin) / 1000),
-      {args.begin(), args.end()}};
+  EventRecord event {
+    onnxruntime::profiling::API_EVENT,
+    static_cast<int>(item.pid),
+    static_cast<int>(item.tid),
+    std::string(roctracer_op_string(ACTIVITY_DOMAIN_HIP_API, item.cid, 0)),
+    static_cast<int64_t>((item.begin - pstart) / 1000),
+    static_cast<int64_t>((item.end - item.begin) / 1000),
+    std::move(event_args)
+  };
 
   // FIXME: deal with missing ext correlation
   auto extId = d->externalCorrelations_[RoctracerLogger::CorrelationDomain::Default][item.id];
-  if (event_map.find(extId) == event_map.end()) {
-    event_map.insert({extId, {event}});
-  }
-  else {
-    event_map[extId].push_back(std::move(event));
-  }
+  event_map[extId].push_back(std::move(event));
 }
 
 }  // namespace profiling

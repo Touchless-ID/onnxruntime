@@ -33,13 +33,20 @@ struct EventRecord {
               std::string event_name,
               long long time_stamp,
               long long duration,
-              std::unordered_map<std::string, std::string>&& event_args) : cat(category),
-                                                                           pid(process_id),
-                                                                           tid(thread_id),
-                                                                           name(std::move(event_name)),
-                                                                           ts(time_stamp),
-                                                                           dur(duration),
-                                                                           args(event_args) {}
+              const std::unordered_map<std::string, std::string>& event_args)
+              : cat(category), pid(process_id), tid(thread_id), name(std::move(event_name)),
+                ts(time_stamp), dur(duration), args(event_args) {}
+
+  EventRecord(EventCategory category,
+              int process_id,
+              int thread_id,
+              std::string&& event_name,
+              long long time_stamp,
+              long long duration,
+              std::unordered_map<std::string, std::string>&& event_args)
+              : cat(category), pid(process_id), tid(thread_id), name(std::move(event_name)),
+                ts(time_stamp), dur(duration), args(std::move(event_args)) {}
+
   EventCategory cat;
   int pid;
   int tid;

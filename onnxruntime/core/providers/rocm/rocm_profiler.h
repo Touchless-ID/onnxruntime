@@ -39,7 +39,9 @@ class RocmProfiler final : public EpProfiler {
   void Stop(uint64_t) override;
 
  private:
-  void addEventRecord(const roctracerRow &item, int64_t pstart, const std::initializer_list<std::pair<std::string, std::string>> &args, std::map<uint64_t, std::vector<EventRecord>> &event_map);
+  void addEventRecord(const roctracerRow &item, int64_t pstart,
+                      std::unordered_map<std::string, std::string>&& event_args,
+                      std::map<uint64_t, std::vector<EventRecord>>& event_map);
 
   RoctracerLogger *d;
 };
