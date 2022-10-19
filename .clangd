@@ -1,0 +1,14 @@
+CompileFlags:
+  Add:
+    - -D__HIP_PLATFORM_AMD__
+    - -DROCM_USE_FLOAT16
+    - -I/home/guangyunhan/onnxruntime-ke/build_ck_interwave/Release/_deps/composable_kernel-src/include
+    - -I/home/guangyunhan/onnxruntime-ke/build_ck_interwave/Release/_deps/composable_kernel-src/library/include
+
+---
+If:
+  PathMatch: .*rocm.*\.cuh?
+
+CompileFlags:
+  Add:
+    - -xhip
