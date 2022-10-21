@@ -50,6 +50,10 @@ parameters:
   type: boolean
   default: false
 
+- name: submodules
+  type: string
+  default: none
+
 jobs:
 - job: build_${{ parameters.job_name_suffix }}
   variables:
@@ -67,7 +71,7 @@ jobs:
   steps:
   - checkout: self
     clean: true
-    submodules: none
+    submodules: ${{ parameters.submodules }}
   - task: UsePythonVersion@0
     inputs:
       versionSpec: '3.7'
